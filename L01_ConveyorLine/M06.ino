@@ -8,6 +8,7 @@ int processTime = minTime;  // 기본 동작 시간
 int moveTime = 9750;        // 1cm 이동하는 시간
 int delayTime = 500;        // 점 찍는 시간 (초기값)
 int manualMoveTime = 500;   // 수동 이동 시간 (약 1mm)
+int repeatCount = 1;        // 반복 횟수 (기본값 1회)
 
 // 반복 동작 여부
 bool running = false; 
@@ -25,7 +26,8 @@ void setup() {
   Serial.println("명령어:");
   Serial.println("'up' - 펜을 위로 이동");
   Serial.println("'down' - 펜을 아래로 이동");
-  Serial.println("숫자 입력 - 해당 시간 동안 동작 (예: 0 = 20초, 1000 = 21초, 10000 = 30초)");
+  Serial.println("숫자1*숫자2 - 동작 시간 및 반복 횟수 설정");
+  Serial.println("예: 10000*3 (점 찍는 시간 10초, 3회 반복)");
   Serial.println("'stop' - 즉시 동작 정지");
 }
 
@@ -47,8 +49,11 @@ void loop() {
       Serial.println("정지 요청됨!");
       stopRequested = true;  // stop 신호 설정
     }
-    else if (isNumber(command)) { // 숫자 입력이면 실행
-      int extraTime = command.toInt();  
+    else if (isTwoNumbers(command)) { // 숫자 2개 입력인지 확인
+      int separatorIndex = command.indexOf('*'); // '*' 구분자의 위치 찾기
+      int extraTime = command.substring(0, separatorIndex).toInt();  
+      repeatCount = command.substring(separatorIndex + 1).toInt();  
+
       processTime = minTime + extraTime;  // 최소시간(20초) + 추가 시간
       delayTime = 500 + extraTime;  // 입력된 숫자만큼 점 찍는 시간 증가
 
@@ -60,21 +65,21 @@ void loop() {
       Serial.print(delayTime / 1000);
       Serial.println(" 초");
 
+      Serial.print("반복 횟수: ");
+      Serial.println(repeatCount);
+
       stopRequested = false; // stop 상태 초기화
       runProcess();  // 동작 시작
     } 
     else {
-      Serial.println("올바른 명령을 입력하세요: 'up', 'down', 숫자, 'stop'");
+      Serial.println("올바른 명령을 입력하세요: 'up', 'down', 숫자1*숫자2, 'stop'");
     }
   }
 }
 
-// 숫자인지 확인하는 함수
-bool isNumber(String str) {
-  for (int i = 0; i < str.length(); i++) {
-    if (!isDigit(str[i])) return false;
-  }
-  return true;
+// 입력된 명령이 두 개의 숫자로 이루어져 있는지 확인
+bool isTwoNumbers(String str) {
+  return (str.indexOf('*') != -1);
 }
 
 // 펜 위로 이동
@@ -95,27 +100,43 @@ void moveDown(int duration) {
   digitalWrite(IN2, LOW);
 }
 
-// 지정된 시간 동안 동작하는 함수 (stop 요청 반영)
+// 지정된 시간 동안 반복 동작하는 함수 (stop 요청 반영)
 void runProcess() {
   Serial.println("동작 시작!");
-  long startTime = millis();
+  long startTime;
+  
+  for (int i = 0; i < repeatCount; i++) {
+    if (stopRequested) break; // 정지 요청 시 종료
 
-  while ((millis() - startTime < processTime) && !stopRequested) {
-    // 1️⃣ 펜 내려가기 (점 찍을 위치로 이동)
-    moveDown(moveTime);
+    Serial.print("반복 ");
+    Serial.print(i + 1);
+    Serial.print(" / ");
+    Serial.println(repeatCount);
+
+    startTime = millis();
+
+    while ((millis() - startTime < processTime) && !stopRequested) {
+      // 1️⃣ 펜 내려가기 (점 찍을 위치로 이동)
+      moveDown(moveTime);
+      
+      // 2️⃣ 점 찍기 (사용자 입력에 따라 대기 시간 조정)
+      Serial.print("점 찍는 중... ");
+      Serial.print(delayTime / 1000);
+      Serial.println("초 대기");
+      delay(delayTime);
+      
+      // 3️⃣ 펜 올라가기 (원래 위치로 복귀)
+      moveUp(moveTime);
+      
+      // 4️⃣ 정지 (다음 동작을 위해 대기)
+      Serial.println("대기 중...");
+      delay(delayTime);
+    }
     
-    // 2️⃣ 점 찍기 (사용자 입력에 따라 대기 시간 조정)
-    Serial.print("점 찍는 중... ");
-    Serial.print(delayTime / 1000);
-    Serial.println("초 대기");
-    delay(delayTime);
-    
-    // 3️⃣ 펜 올라가기 (원래 위치로 복귀)
-    moveUp(moveTime);
-    
-    // 4️⃣ 정지 (다음 동작을 위해 대기)
-    Serial.println("대기 중...");
-    delay(delayTime);
+    if (stopRequested) {
+      Serial.println("STOP 명령으로 인해 중지됨.");
+      break;
+    }
   }
 
   Serial.println("동작 완료. 새로운 명령을 입력하세요.");
